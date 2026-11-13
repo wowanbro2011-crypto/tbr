@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tbr v2.0 — Швейцарский нож qBittorrent</title>
+    <style>
+        :root {
+            --bg-main: #121214; --bg-panel: #1a1a20; --bg-input: #262630; --bg-hover: #22222a;
+            --text: #ffffff; --text-muted: #95a5a6; --accent: #2ecc71; --accent-hover: #27ae60;
+            --danger: #e74c3c; --warning: #f39c12; --info: #3498db; --border: #2a2a34;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background: var(--bg-main); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
+
+        ::-webkit-scrollbar { width: 7px; height: 7px; }
+        ::-webkit-scrollbar-track { background: var(--bg-main); }
+        ::-webkit-scrollbar-thumb { background: var(--bg-input); border-radius: 4px; border: 1px solid var(--border); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        header { background: var(--bg-panel); padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .logo-container { display: flex; align-items: center; gap: 10px; }
+        .logo-svg { width: 32px; height: 32px; filter: drop-shadow(0 0 6px rgba(46, 204, 113, 0.4)); }
+        .logo-text { font-size: 1.15rem; font-weight: 800; color: var(--accent); letter-spacing: 0.5px; }
+
+        .nav-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+        .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 7px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.15s; }
+        .tab-btn:hover { background: var(--bg-input); color: var(--text); }
+        .tab-btn.active { background: var(--accent); color: #000; font-weight: 700; }
+
+        .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .btn { background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; transition: 0.15s; text-decoration: none; }
+        .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-secondary { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); }
+
+        main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .tab-content { display: none; height: 100%; padding: 14px; overflow-y: auto; }
+        .tab-content.active { display: flex; gap: 14px; }
+
+        .torrent-left { flex: 3.5; display: flex; flex-direction: column; background: var(--bg-panel); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; min-width: 0; }
+        .torrent-right { flex: 1; min-width: 290px; display: flex; flex-direction: column; gap: 12px; }
+        .table-toolbar { padding: 8px 12px; display: flex; gap: 8px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+        .search-input { flex: 1; min-width: 160px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 6px; outline: none; font-size: 13px; }
+
+        .table-container { flex: 1; overflow: auto; min-height: 250px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+        th { background: #1e1e26; color: var(--text-muted); padding: 9px 10px; position: sticky; top: 0; border-bottom: 2px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; font-size: 11.5px; }
+        th:hover { color: var(--accent); }
+        td { padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        tr:hover td { background: var(--bg-hover); }
+        tr.selected td { background: rgba(46, 204, 113, 0.15) !important; border-left: 3px solid var(--accent); }
+
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .badge-up { background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); }
+        .badge-dl { background: rgba(52, 152, 219, 0.15); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.3); }
+        .badge-pause { background: rgba(149, 165, 166, 0.15); color: #95a5a6; border: 1px solid rgba(149, 165, 166, 0.3); }
+        .badge-stall { background: rgba(243, 156, 18, 0.15); color: #f39c12; border: 1px solid rgba(243, 156, 18, 0.3); }
+        .badge-stop { background: rgba(231, 76, 60, 0.15); color: #e74c3c; border: 1px solid rgba(231, 76, 60, 0.3); }
+        .badge-force { background: rgba(230, 126, 34, 0.15); color: #e67e22; border: 1px solid rgba(230, 126, 34, 0.3); }
+        .badge-err { background: rgba(231, 76, 60, 0.25); color: #ff5252; border: 1px solid #ff5252; }
+
+        .card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .card-title { font-size: 12px; font-weight: 800; margin-bottom: 8px; color: var(--accent); letter-spacing: 0.5px; }
+        .form-group { margin-bottom: 8px; }
+        .form-group label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
+        .form-control { width: 100%; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 6px; outline: none; font-size: 13px; }
+
+        .terminal { background: #0c0c0f; color: #2ecc71; font-family: 'Consolas', monospace; font-size: 12px; padding: 12px; border-radius: 6px; height: 180px; overflow-y: auto; white-space: pre-wrap; line-height: 1.45; border: 1px solid var(--border); }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 999; padding: 14px; }
+        .modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 480px; padding: 18px; }
+
+        @media (max-width: 900px) {
+            .tab-content.active { flex-direction: column; overflow-y: auto; }
+            .torrent-right { min-width: 100%; }
+            body { height: auto; overflow-y: auto; }
+            main { overflow: visible; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo-container">
+        <svg class="logo-svg" viewBox="0 0 48 48" fill="none">
+            <rect width="48" height="48" rx="10" fill="#1A1A20"/>
+            <path d="M26 6L12 26H24L20 42L36 22H24L26 6Z" fill="#2ECC71" stroke="#2ECC71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="logo-text">tbr PRO</span>
+        <span id="qb-status-badge" class="badge badge-pause" style="cursor: pointer;" onclick="toggleQbPower()">⏳ qB...</span>
+    </div>
+    <div class="nav-tabs">
+        <button class="tab-btn active" data-tab="torrents" onclick="switchTab('torrents')">⚡ Раздачи</button>
+        <button class="tab-btn" data-tab="merger" onclick="switchTab('merger')">🔀 Подменщик</button>
+        <button class="tab-btn" data-tab="summary" onclick="switchTab('summary')">📊 Сводка & Выгрузки</button>
+        <button class="tab-btn" data-tab="analytics" onclick="switchTab('analytics')">📈 Аналитика & Прогнозы</button>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-secondary" onclick="openSettingsModal()">⚙️ Настройки</button>
+        <button class="btn btn-secondary" onclick="restartQb()">🔄 Перезапуск qB</button>
+    </div>
+</header>
+
+<main>
+    <!-- TAB 1: Раздачи -->
+    <div id="tab-torrents" class="tab-content active">
+        <div class="torrent-left">
+            <div class="table-toolbar">
+                <input type="text" id="search-box" class="search-input" placeholder="🔍 Поиск раздач..." oninput="filterTorrents()">
+                <button class="btn btn-secondary" onclick="loadTorrents(true)">🔄 Обновить</button>
+            </div>
+            <div class="table-container">
+                <table id="torrents-table">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable('name')">Имя раздачи <span id="sort-icon-name"></span></th>
+                            <th onclick="sortTable('size')">Размер <span id="sort-icon-size"></span></th>
+                            <th onclick="sortTable('uploaded')">Отдано <span id="sort-icon-uploaded"></span></th>
+                            <th onclick="sortTable('ratio')">Ratio <span id="sort-icon-ratio"></span></th>
+                            <th onclick="sortTable('state')">Состояние <span id="sort-icon-state"></span></th>
+                            <th onclick="sortTable('save_path')">Путь <span id="sort-icon-save_path"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="torrents-tbody">
+                        <tr><td colspan="6" style="text-align:center; padding: 20px;">Загрузка раздач...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="torrent-right">
+            <!-- Управление выбранным торрентом -->
+            <div class="card">
+                <div class="card-title">ВЫБРАННАЯ РАЗДАЧА</div>
+                <div id="selected-title" style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-muted); text-overflow:ellipsis; overflow:hidden;">
+                    Выберите раздачу в таблице слева
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                    <button class="btn btn-secondary" onclick="torrentAction('stop')">⏸️ Пауза</button>
+                    <button class="btn btn-secondary" onclick="torrentAction('start')">▶️ Пуск</button>
+                    <button class="btn btn-secondary" onclick="torrentAction('setForceStart')">⚡ Форс</button>
+                </div>
+                <button class="btn" style="width: 100%; justify-content: center; padding: 7px;" onclick="goToAnalyticsWithTorrent()">🔮 Рассчитать прогноз этой раздачи</button>
+            </div>
+
+            <!-- Полная остановка / запуск всех торрентов -->
+            <div class="card" style="border-color: rgba(231, 76, 60, 0.4);">
+                <div class="card-title" style="color: #e74c3c;">ГЛОБАЛЬНОЕ УПРАВЛЕНИЕ СИДБОКСОМ</div>
+                <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+                    Остановить или возобновить вообще все раздачи в клиенте:
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button class="btn btn-danger" style="width: 100%; padding: 8px;" onclick="globalTorrentAction('stop')">⏸️ ОСТАНОВИТЬ ВСЕ РАЗДАЧИ</button>
+                    <button class="btn" style="width: 100%; padding: 8px;" onclick="globalTorrentAction('start')">▶️ ВОЗОБНОВИТЬ ВСЕ РАЗДАЧИ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: Подменщик -->
+    <div id="tab-merger" class="tab-content" style="flex-direction: column; max-width: 850px; margin: 0 auto; width: 100%;">
+        <div class="card">
+            <div class="card-title">🔄 ПОДМЕНЩИК РАЗДАЧ (.FASTRESUME)</div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                Клиент qBittorrent автоматически выгружается перед подменой и перезапускается после завершения — бенкод не повреждается!
+            </p>
+            <div class="form-group">
+                <label>1. Старая раздача (источник статистики):</label>
+                <select id="merger-old" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label>2. Новая раздача (приёмник):</label>
+                <select id="merger-new" class="form-control"></select>
+            </div>
+            <button class="btn" style="width: 100%; padding: 10px; margin-top: 8px;" onclick="runMerger()">🚀 ВЫПОЛНИТЬ БЕЗОПАСНЫЙ ПЕРЕНОС</button>
+        </div>
+        <div class="card" style="margin-top: 14px;">
+            <div class="card-title">ЛОГ ОПЕРАЦИИ</div>
+            <div id="merger-log" class="terminal" style="height: 140px;">Готов к работе...</div>
+        </div>
+    </div>
+
+    <!-- TAB 3: Сводка & Выгрузки -->
+    <div id="tab-summary" class="tab-content" style="flex-direction: column; width: 100%; max-width: 1400px; margin: 0 auto;">
+        <!-- Карточки сидбокса -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px;">
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Раздач:</div>
+                <div id="sum-count" style="font-size: 18px; font-weight: 800;">-</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Общий объем:</div>
+                <div id="sum-size" style="font-size: 18px; font-weight: 800;">-</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Всего отдано:</div>
+                <div id="sum-uploaded" style="font-size: 18px; font-weight: 800; color: var(--accent);">-</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Сумма за 1 час:</div>
+                <div id="sum-global-hour" style="font-size: 15px; font-weight: 800; color: #9b59b6;">-</div>
+                <div id="sum-global-hour-speed" style="font-size: 11px; color: #9b59b6; font-weight: 600;">-</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Объем в день:</div>
+                <div id="sum-global-day" style="font-size: 15px; font-weight: 800; color: #e67e22;">-</div>
+                <div id="sum-global-day-speed" style="font-size: 11px; color: #e67e22; font-weight: 600;">-</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 11px; color: var(--text-muted);">Ratio/ч (всего / 24ч):</div>
+                <div id="sum-ratio-h" style="font-size: 13px; font-weight: 700; color: #3498db; margin-top: 4px;">-</div>
+            </div>
+        </div>
+
+        <!-- Тулбар фильтрации -->
+        <div class="card" style="margin-bottom: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+            <div style="flex: 1; min-width: 180px;">
+                <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Поиск по имени:</label>
+                <input type="text" id="sum-filter-search" class="form-control" placeholder="Фильтр раздач..." oninput="applySummaryFilters()">
+            </div>
+            <div style="width: 130px;">
+                <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Мин. Ratio:</label>
+                <input type="number" step="0.5" id="sum-filter-ratio" class="form-control" placeholder="Напр: 2.0" oninput="applySummaryFilters()">
+            </div>
+            <div style="width: 150px;">
+                <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Мин. отдано (ГБ):</label>
+                <input type="number" id="sum-filter-uploaded" class="form-control" placeholder="Напр: 50" oninput="applySummaryFilters()">
+            </div>
+            <div>
+                <button class="btn btn-secondary" onclick="resetSummaryFilters()">Сброс</button>
+                <button class="btn" onclick="exportFilteredSummaryCSV()">📥 Экспорт выборки CSV</button>
+            </div>
+        </div>
+
+        <!-- Таблица сводки -->
+        <div class="card" style="flex: 1; overflow: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortSummary('name')">Имя раздачи <span id="sum-sort-name"></span></th>
+                        <th onclick="sortSummary('size')">Размер <span id="sum-sort-size"></span></th>
+                        <th onclick="sortSummary('uploaded')">Отдано <span id="sum-sort-uploaded"></span></th>
+                        <th onclick="sortSummary('ratio')" style="color: #2ecc71;">Ratio <span id="sum-sort-ratio"></span></th>
+                        <th onclick="sortSummary('speed_all_time')" style="color: #3498db;">Ср. скорость <span id="sum-sort-speed_all_time"></span></th>
+                        <th onclick="sortSummary('speed_1h')" style="color: #9b59b6;">Скор. 1ч <span id="sum-sort-speed_1h"></span></th>
+                        <th onclick="sortSummary('speed_24h')" style="color: #e67e22;">Скор. 24ч <span id="sum-sort-speed_24h"></span></th>
+                        <th onclick="sortSummary('vol_hour')" style="color: #9b59b6;">МБ/ч <span id="sum-sort-vol_hour"></span></th>
+                        <th onclick="sortSummary('vol_day')" style="color: #e67e22;">МБ/день <span id="sum-sort-vol_day"></span></th>
+                        <th onclick="sortSummary('ratio_h_all')">Ratio/ч <span id="sum-sort-ratio_h_all"></span></th>
+                        <th onclick="sortSummary('created')">Дата создания <span id="sum-sort-created"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="summary-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TAB 4: Аналитика & Умный калькулятор -->
+    <div id="tab-analytics" class="tab-content" style="flex-direction: column; width: 100%; max-width: 1200px; margin: 0 auto; gap: 14px;">
+
+        <!-- УМНЫЙ КАЛЬКУЛЯТОР ПРОГНОЗОВ -->
+        <div class="card">
+            <div class="card-title">🔮 УМНЫЙ КАЛЬКУЛЯТОР & ПРОГНОЗИРОВАНИЕ (14 ДНЕЙ, 70/30)</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; align-items: flex-end;">
+                <div>
+                    <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Объект расчёта:</label>
+                    <select id="smart-calc-target-type" class="form-control" onchange="onSmartCalcTargetChange()">
+                        <option value="all">🌐 Весь сидбокс (суммарно)</option>
+                    </select>
+                </div>
+                <div>
+                    <label id="smart-calc-goal-label" style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Цель сидбокса (напр: 50 TiB или 100 GiB):</label>
+                    <input type="text" id="smart-calc-goal" class="form-control" placeholder="Напр: 50 TiB или 100 GiB">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Скорость (пусто = умный расчёт, или МБ/с):</label>
+                    <input type="text" id="smart-calc-speed" class="form-control" placeholder="авто (или напр: 25 МБ/с)">
+                </div>
+                <div>
+                    <button class="btn" style="width: 100%; padding: 8px;" onclick="runSmartCalc()">🔮 Рассчитать прогноз</button>
+                </div>
+            </div>
+
+            <!-- ЭКРАН ВЫВОДА РАСЧЁТА И ТАЙМИНГОВ (ПОСТОЯННЫЙ ТЕРМИНАЛ) -->
+            <div style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--accent);">🖥️ ЭКРАН ВЫВОДА РАСЧЁТА И ТАЙМИНГОВ:</span>
+                    <div style="display: flex; gap: 6px;">
+                        <button id="btn-toggle-forecast-table" class="btn btn-secondary" style="display: none; padding: 4px 8px; font-size: 11px;" onclick="toggleForecastTable()">📅 Почасовой прогноз на 24ч</button>
+                        <button id="btn-export-forecast-csv" class="btn btn-secondary" style="display: none; padding: 4px 8px; font-size: 11px;" onclick="exportForecastCSV()">📥 Скачать прогноз CSV</button>
+                    </div>
+                </div>
+                <div id="smart-calc-terminal" class="terminal">Ожидание ввода параметров. Выберите объект, введите цель и нажмите кнопку «Рассчитать прогноз»...</div>
+            </div>
+
+            <!-- Раскрывающаяся 24-часовая таблица -->
+            <div id="smart-res-table-wrap" style="display: none; margin-top: 12px; max-height: 240px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr><th>Дата</th><th>Интервал (час)</th><th>Ожидаемый объём</th><th>Ожидаемая скорость</th><th>Обоснование</th></tr>
+                    </thead>
+                    <tbody id="smart-res-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- История отдачи по плановым снимкам -->
+        <div class="card">
+            <div class="card-title">⏱️ ИСТОРИЯ ОТДАЧИ ПО ЧАСАМ (ПО ПЛАНОВЫМ АВТО-СНИМКАМ)</div>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                <select id="history-torrent-select" class="form-control" style="flex: 1; min-width: 250px;" onchange="loadTorrentHourlyHistory()"></select>
+                <button class="btn btn-secondary" onclick="loadTorrentHourlyHistory()">Показать историю</button>
+            </div>
+            <div style="max-height: 200px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr><th>Время снимка</th><th>Всего отдано</th><th>Прибавка за час (МБ)</th><th>Скорость за час</th></tr>
+                    </thead>
+                    <tbody id="torrent-history-tbody">
+                        <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Выберите раздачу для истории</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Архив выгрузок -->
+        <div class="card">
+            <div class="card-title">📂 АРХИВ ВЫГРУЗОК (АВТО И РУЧНЫЕ)</div>
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom: 10px; flex-wrap: wrap;">
+                <select id="log-file-select" class="form-control" style="flex: 1; min-width: 220px;" onchange="loadLogContent()"></select>
+                <button class="btn btn-secondary" onclick="loadLogContent()">Просмотр</button>
+                <a id="download-log-btn" class="btn" href="#">Скачать файл</a>
+            </div>
+            <div id="log-view-terminal" class="terminal" style="height: 160px;"></div>
+        </div>
+    </div>
+</main>
+
+<!-- МОДАЛЬНОЕ ОКНО НАСТРОЕК -->
+<div id="settings-modal" class="modal-backdrop">
+    <div class="modal">
+        <div class="card-title" style="font-size: 14px; margin-bottom: 14px;">⚙️ НАСТРОЙКИ СЕТИ И СИСТЕМЫ</div>
+
+        <div class="form-group" style="background: var(--bg-input); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+                <div style="font-size: 13px; font-weight: 700;">Автозагрузка Windows</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Запускать tbr автоматически при старте ПК</div>
+            </div>
+            <button id="autostart-toggle-btn" class="btn btn-secondary" onclick="toggleAutostart()">Проверка...</button>
+        </div>
+
+        <div class="form-group">
+            <label>Порт Веб-интерфейса (напр: 5000, 8080):</label>
+            <input type="number" id="setting-web-port" class="form-control">
+        </div>
+        <div class="form-group">
+            <label>Хост (0.0.0.0 для локальной сети и NetBird):</label>
+            <input type="text" id="setting-web-host" class="form-control">
+        </div>
+        <div class="form-group">
+            <label>qBittorrent WebUI IP (пусто = авто):</label>
+            <input type="text" id="setting-qb-ip" class="form-control" placeholder="127.0.0.1">
+        </div>
+        <div class="form-group">
+            <label>qBittorrent WebUI Порт (пусто = авто):</label>
+            <input type="number" id="setting-qb-port" class="form-control" placeholder="8080">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+            <button class="btn btn-secondary" onclick="closeSettingsModal()">Закрыть</button>
+            <button class="btn" onclick="saveSettings()">💾 Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const VALID_TABS = ['torrents', 'merger', 'summary', 'analytics'];
+    let torrentsData = [];
+    let currentSortCol = 'name';
+    let currentSortAsc = true;
+    let selectedHash = null;
+
+    let rawSummaryItems = [];
+    let filteredSummaryItems = [];
+    let summarySortCol = 'uploaded';
+    let summarySortAsc = false;
+    let lastForecastData = null;
+
+    const STATUS_MAP = {
+        'downloading': { text: 'Скачивается', badge: 'badge-dl' },
+        'seeding': { text: 'Раздаётся', badge: 'badge-up' },
+        'uploading': { text: 'Раздаётся', badge: 'badge-up' },
+        'stalledup': { text: 'Раздача (нет пиров)', badge: 'badge-stall' },
+        'stalleddl': { text: 'Ожидание сидов', badge: 'badge-stall' },
+        'pausedup': { text: 'На паузе (завершён)', badge: 'badge-pause' },
+        'pauseddl': { text: 'На паузе (загрузка)', badge: 'badge-pause' },
+        'stoppedup': { text: 'Остановлен', badge: 'badge-stop' },
+        'stoppeddl': { text: 'Остановлен', badge: 'badge-stop' },
+        'forcedup': { text: 'Форс-раздача', badge: 'badge-force' },
+        'forceddl': { text: 'Форс-загрузка', badge: 'badge-force' },
+        'checkingup': { text: 'Проверка файлов', badge: 'badge-pause' },
+        'checkingdl': { text: 'Проверка файлов', badge: 'badge-pause' },
+        'queuedup': { text: 'В очереди (раздача)', badge: 'badge-pause' },
+        'queueddl': { text: 'В очереди (загрузка)', badge: 'badge-pause' },
+        'error': { text: 'Ошибка торрента', badge: 'badge-err' },
+        'missingfiles': { text: 'Файлы не найдены', badge: 'badge-err' },
+        'moving': { text: 'Перемещение', badge: 'badge-dl' },
+        'unknown': { text: 'Активен', badge: 'badge-up' }
+    };
+
+    function formatBytesJS(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+        let val = parseFloat(bytes);
+        let u = 0;
+        while (val >= 1024 && u < units.length - 1) {
+            val /= 1024;
+            u++;
+        }
+        return `${val.toFixed(2)} ${units[u]}`;
+    }
+
+    function parseDateToTs(str) {
+        if (!str || typeof str !== 'string' || str.includes('неизвестна')) return 0;
+        const parts = str.trim().split(' ');
+        if (parts.length < 2) return 0;
+        const dmy = parts[0].split('.');
+        const hm = parts[1].split(':');
+        if (dmy.length !== 3 || hm.length !== 2) return 0;
+        return new Date(parseInt(dmy[2]), parseInt(dmy[1]) - 1, parseInt(dmy[0]), parseInt(hm[0]), parseInt(hm[1])).getTime();
+    }
+
+    function switchTab(name, updateHash = true) {
+        if (!VALID_TABS.includes(name)) name = 'torrents';
+
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+
+        if (updateHash && window.location.hash !== '#' + name) window.location.hash = name;
+
+        if (name === 'torrents') loadTorrents();
+        if (name === 'merger') loadMergerLists();
+        if (name === 'summary') loadSummary();
+        if (name === 'analytics') loadAnalyticsTab();
+    }
+
+    function syncTabWithHash() {
+        const rawHash = (window.location.hash || '').replace('#', '').trim();
+        switchTab(VALID_TABS.includes(rawHash) ? rawHash : 'torrents', false);
+    }
+    window.addEventListener('hashchange', syncTabWithHash);
+
+    // Управление клиентом qBittorrent
+    async function checkQbStatus() {
+        try {
+            const res = await fetch('/api/qb/status');
+            const d = await res.json();
+            const badge = document.getElementById('qb-status-badge');
+            if (d.running) {
+                badge.className = 'badge badge-up';
+                badge.innerText = '🟢 qB Запущен';
+            } else {
+                badge.className = 'badge badge-stop';
+                badge.innerText = '🔴 qB Остановлен (клик для пуска)';
+            }
+        } catch (e) {}
+    }
+
+    async function toggleQbPower() {
+        const res = await fetch('/api/qb/status');
+        const d = await res.json();
+        const action = d.running ? 'stop' : 'start';
+        if (confirm(d.running ? "Закрыть qBittorrent?" : "Запустить qBittorrent?")) {
+            await fetch(`/api/qb/${action}`, { method: 'POST' });
+            setTimeout(checkQbStatus, 1500);
+        }
+    }
+
+    async function restartQb() {
+        if (confirm("Перезапустить qBittorrent?")) {
+            await fetch('/api/qb/restart', { method: 'POST' });
+            setTimeout(checkQbStatus, 2000);
+        }
+    }
+
+    // Автозагрузка
+    async function checkAutostart() {
+        const res = await fetch('/api/autostart/status');
+        const d = await res.json();
+        const btn = document.getElementById('autostart-toggle-btn');
+        if (d.enabled) {
+            btn.className = 'btn btn-danger';
+            btn.innerText = 'Отключить';
+        } else {
+            btn.className = 'btn';
+            btn.innerText = 'Включить';
+        }
+    }
+
+    async function toggleAutostart() {
+        const res = await fetch('/api/autostart/toggle', { method: 'POST' });
+        const d = await res.json();
+        alert(d.message);
+        checkAutostart();
+    }
+
+    // Раздачи на 1-й вкладке
+    async function loadTorrents(force = false) {
+        if (force) await fetch('/api/torrents/refresh', { method: 'POST' });
+        const res = await fetch('/api/torrents');
+        const json = await res.json();
+        torrentsData = json.torrents || [];
+        checkQbStatus();
+        applySortAndRender();
+        if (document.getElementById('tab-merger').classList.contains('active')) loadMergerLists();
+    }
+
+    function sortTable(col) {
+        if (currentSortCol === col) currentSortAsc = !currentSortAsc;
+        else {
+            currentSortCol = col;
+            currentSortAsc = (col === 'name' || col === 'save_path');
+        }
+        applySortAndRender();
+    }
+
+    function applySortAndRender() {
+        ['name', 'size', 'uploaded', 'ratio', 'state', 'save_path'].forEach(c => {
+            const el = document.getElementById('sort-icon-' + c);
+            if (el) el.innerText = (c === currentSortCol) ? (currentSortAsc ? ' ▲' : ' ▼') : '';
+        });
+
+        torrentsData.sort((a, b) => {
+            let vA = a[currentSortCol];
+            let vB = b[currentSortCol];
+            if (typeof vA === 'string') vA = vA.toLowerCase();
+            if (typeof vB === 'string') vB = vB.toLowerCase();
+            if (vA < vB) return currentSortAsc ? -1 : 1;
+            if (vA > vB) return currentSortAsc ? 1 : -1;
+            return 0;
+        });
+        filterTorrents();
+    }
+
+    function renderTorrents(list) {
+        const tbody = document.getElementById('torrents-tbody');
+        tbody.innerHTML = '';
+        list.forEach(t => {
+            const tr = document.createElement('tr');
+            if (t.hash === selectedHash) tr.classList.add('selected');
+            tr.onclick = () => selectTorrent(t, tr);
+
+            const st = STATUS_MAP[t.state.toLowerCase()] || STATUS_MAP['unknown'];
+            tr.innerHTML = `
+                <td><strong>${t.name}</strong></td>
+                <td>${t.size_fmt}</td>
+                <td>${t.uploaded_fmt}</td>
+                <td><strong style="color:var(--accent);">${t.ratio}x</strong></td>
+                <td><span class="badge ${st.badge}">${st.text}</span></td>
+                <td style="color:var(--text-muted); font-size:11px;">${t.save_path}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function selectTorrent(t, tr) {
+        selectedHash = t.hash;
+        document.querySelectorAll('#torrents-tbody tr').forEach(r => r.classList.remove('selected'));
+        if (tr) tr.classList.add('selected');
+        document.getElementById('selected-title').innerText = t.name + ' (' + t.size_fmt + ')';
+    }
+
+    function filterTorrents() {
+        const q = document.getElementById('search-box').value.toLowerCase();
+        const filtered = torrentsData.filter(t => (t.name || '').toLowerCase().includes(q) || (t.save_path || '').toLowerCase().includes(q));
+        renderTorrents(filtered);
+    }
+
+    async function torrentAction(action) {
+        if (!selectedHash) return alert("Сначала выберите раздачу!");
+        const res = await fetch('/api/torrents/action', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({hash: selectedHash, action: action})
+        });
+        const d = await res.json();
+        if (d.message) alert(d.message);
+        loadTorrents();
+    }
+
+    async function globalTorrentAction(action) {
+        const actionTitle = action === 'stop' ? "поставить ВСЕ раздачи на паузу" : "возобновить ВСЕ раздачи";
+        if (!confirm(`Вы действительно хотите ${actionTitle}?`)) return;
+
+        const res = await fetch('/api/torrents/action_all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        });
+        const d = await res.json();
+        alert(d.message || "Команда отправлена");
+        loadTorrents();
+    }
+
+    function goToAnalyticsWithTorrent() {
+        if (!selectedHash) return alert("Сначала выберите раздачу в таблице!");
+        switchTab('analytics');
+        setTimeout(() => {
+            const sel = document.getElementById('smart-calc-target-type');
+            sel.value = selectedHash;
+            onSmartCalcTargetChange();
+            document.getElementById('smart-calc-goal').focus();
+        }, 150);
+    }
+
+    // Подменщик
+    function loadMergerLists() {
+        const o = document.getElementById('merger-old');
+        const n = document.getElementById('merger-new');
+        if (!torrentsData || torrentsData.length === 0) {
+            loadTorrents().then(() => loadMergerLists());
+            return;
+        }
+        o.innerHTML = ''; n.innerHTML = '';
+        torrentsData.forEach(t => {
+            const opt = `<option value="${t.hash}">${t.name} [${t.hash.substring(0, 8)}]</option>`;
+            o.innerHTML += opt;
+            n.innerHTML += opt;
+        });
+        if (torrentsData.length > 1) n.selectedIndex = 1;
+    }
+
+    async function runMerger() {
+        const logBox = document.getElementById('merger-log');
+        const oldHash = document.getElementById('merger-old').value;
+        const newHash = document.getElementById('merger-new').value;
+        if (!oldHash || !newHash) return alert("Выберите обе раздачи!");
+
+        logBox.innerText = '⏳ Безопасная остановка qBittorrent и перенос статистики...';
+        const res = await fetch('/api/merger/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({old_hash: oldHash, new_hash: newHash})
+        });
+        const d = await res.json();
+        logBox.innerText = (d.log || []).join('\n');
+    }
+
+    // Сводка
+    async function loadSummary() {
+        const res = await fetch('/api/summary');
+        const d = await res.json();
+        document.getElementById('sum-count').innerText = d.total_torrents;
+        document.getElementById('sum-size').innerText = d.total_size_fmt;
+        document.getElementById('sum-uploaded').innerText = d.total_uploaded_fmt;
+
+        document.getElementById('sum-global-hour').innerText = d.global_hour_volume_fmt || '-';
+        document.getElementById('sum-global-hour-speed').innerText = d.global_hour_speed_fmt || '-';
+        document.getElementById('sum-global-day').innerText = d.global_day_volume_fmt || '-';
+        document.getElementById('sum-global-day-speed').innerText = d.global_day_speed_fmt || '-';
+        document.getElementById('sum-ratio-h').innerText = `${d.global_ratio_h_all_fmt} / ${d.global_ratio_h_day_fmt}`;
+
+        rawSummaryItems = d.items || [];
+        populateAnalyticsSelectors();
+        applySummaryFilters();
+    }
+
+    function applySummaryFilters() {
+        const q = (document.getElementById('sum-filter-search').value || '').toLowerCase();
+        const minRatio = parseFloat(document.getElementById('sum-filter-ratio').value) || 0;
+        const minUpGb = (parseFloat(document.getElementById('sum-filter-uploaded').value) || 0) * (1024**3);
+
+        filteredSummaryItems = rawSummaryItems.filter(i => {
+            if (q && !(i.name || '').toLowerCase().includes(q)) return false;
+            if (minRatio > 0 && (i.ratio || 0) < minRatio) return false;
+            if (minUpGb > 0 && (i.uploaded || 0) < minUpGb) return false;
+            return true;
+        });
+
+        applySummarySortAndRender();
+    }
+
+    function resetSummaryFilters() {
+        document.getElementById('sum-filter-search').value = '';
+        document.getElementById('sum-filter-ratio').value = '';
+        document.getElementById('sum-filter-uploaded').value = '';
+        applySummaryFilters();
+    }
+
+    function sortSummary(col) {
+        if (summarySortCol === col) summarySortAsc = !summarySortAsc;
+        else {
+            summarySortCol = col;
+            summarySortAsc = (col === 'name');
+        }
+        applySummarySortAndRender();
+    }
+
+    function applySummarySortAndRender() {
+        ['name', 'size', 'uploaded', 'ratio', 'speed_all_time', 'speed_1h', 'speed_24h', 'vol_hour', 'vol_day', 'ratio_h_all', 'created'].forEach(c => {
+            const el = document.getElementById('sum-sort-' + c);
+            if (el) el.innerText = (c === summarySortCol) ? (summarySortAsc ? ' ▲' : ' ▼') : '';
+        });
+
+        filteredSummaryItems.sort((a, b) => {
+            let vA = a[summarySortCol];
+            let vB = b[summarySortCol];
+
+            if (summarySortCol === 'created') {
+                vA = a.created_ts || parseDateToTs(a.created);
+                vB = b.created_ts || parseDateToTs(b.created);
+            } else if (typeof vA === 'string') {
+                vA = vA.toLowerCase();
+            }
+            if (summarySortCol !== 'created' && typeof vB === 'string') {
+                vB = vB.toLowerCase();
+            }
+
+            if (vA < vB) return summarySortAsc ? -1 : 1;
+            if (vA > vB) return summarySortAsc ? 1 : -1;
+            return 0;
+        });
+
+        renderSummaryTable(filteredSummaryItems);
+    }
+
+    function renderSummaryTable(items) {
+        const tbody = document.getElementById('summary-tbody');
+        tbody.innerHTML = '';
+        items.forEach(i => {
+            tbody.innerHTML += `<tr>
+                <td><strong>${i.name}</strong></td>
+                <td>${formatBytesJS(i.size)}</td>
+                <td>${formatBytesJS(i.uploaded)}</td>
+                <td><strong style="color: #2ecc71;">${parseFloat(i.ratio || 0).toFixed(2)}x</strong></td>
+                <td style="color: #3498db; font-weight: 600;">${i.speed_all_time_fmt || '0 B/s'}</td>
+                <td style="color: #9b59b6; font-weight: 600;">${i.speed_1h_fmt || '0 B/s'}</td>
+                <td style="color: #e67e22; font-weight: 600;">${i.speed_24h_fmt || '0 B/s'}</td>
+                <td style="color: #9b59b6; font-weight: 700;">${i.vol_hour_fmt || '0.00 МБ/ч'}</td>
+                <td style="color: #e67e22; font-weight: 700;">${i.vol_day_fmt || '0.00 МБ/день'}</td>
+                <td style="color: var(--text-muted); font-size: 11px;">${i.ratio_h_all_fmt || '0.000 /ч'}</td>
+                <td style="color: var(--text-muted); font-size: 11px;">${i.created}</td>
+            </tr>`;
+        });
+    }
+
+    async function exportFilteredSummaryCSV() {
+        const res = await fetch('/api/export_csv', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ items: filteredSummaryItems })
+        });
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toLocaleString('sv-SE').replace(/[- :]/g, '_');
+        a.download = `summary_manual_${ts}.csv`;
+        a.click();
+    }
+
+    // === АНАЛИТИКА & УМНЫЙ КАЛЬКУЛЯТОР ПРОГНОЗОВ ===
+    async function loadAnalyticsTab() {
+        loadLogsList();
+        if (rawSummaryItems.length === 0) {
+            await loadSummary();
+        } else {
+            populateAnalyticsSelectors();
+        }
+    }
+
+    function populateAnalyticsSelectors() {
+        const cSel = document.getElementById('smart-calc-target-type');
+        const curCVal = cSel.value;
+        cSel.innerHTML = '<option value="all">🌐 Весь сидбокс (суммарно)</option>';
+        rawSummaryItems.forEach(t => {
+            cSel.innerHTML += `<option value="${t.hash_id}">📦 ${t.name}</option>`;
+        });
+        if (curCVal) cSel.value = curCVal;
+
+        const hSel = document.getElementById('history-torrent-select');
+        const curHVal = hSel.value;
+        hSel.innerHTML = '<option value="all">🌐 Весь сидбокс (суммарно)</option>';
+        rawSummaryItems.forEach(t => {
+            hSel.innerHTML += `<option value="${t.hash_id}">📦 ${t.name}</option>`;
+        });
+        if (curHVal) hSel.value = curHVal;
+    }
+
+    function onSmartCalcTargetChange() {
+        const sel = document.getElementById('smart-calc-target-type');
+        const lbl = document.getElementById('smart-calc-goal-label');
+        const inp = document.getElementById('smart-calc-goal');
+        if (sel.value === 'all') {
+            lbl.innerText = 'Цель сидбокса (напр: 50 TiB или 100 GiB):';
+            inp.placeholder = 'Напр: 50 TiB или 100 GiB';
+        } else {
+            lbl.innerText = 'Цель раздачи (напр: 2.0 ratio или 80 GiB):';
+            inp.placeholder = 'Напр: 2.0 ratio или 80 GiB';
+        }
+    }
+
+    async function runSmartCalc() {
+        const term = document.getElementById('smart-calc-terminal');
+        const targetTypeVal = document.getElementById('smart-calc-target-type').value;
+        const isAll = (targetTypeVal === 'all');
+        const goalStr = document.getElementById('smart-calc-goal').value.trim();
+        const speedStr = document.getElementById('smart-calc-speed').value.trim();
+
+        if (!goalStr) {
+            term.innerText = `[ОШИБКА]\nУкажите цель для расчёта (например: 50 TiB для сидбокса или 2.0 ratio для раздачи)!`;
+            return;
+        }
+
+        term.innerText = `⏳ Выполняется расчёт прогноза по сезонной кривой (14 дней, 70/30)...`;
+
+        const payload = {
+            target_type: isAll ? 'all' : 'torrent',
+            hash: isAll ? '' : targetTypeVal,
+            target: goalStr,
+            speed: speedStr
+        };
+
+        const res = await fetch('/api/smart_calc', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+
+        const btnTable = document.getElementById('btn-toggle-forecast-table');
+        const btnCsv = document.getElementById('btn-export-forecast-csv');
+        const wrapTable = document.getElementById('smart-res-table-wrap');
+
+        if (!d.success) {
+            btnTable.style.display = 'none';
+            btnCsv.style.display = 'none';
+            wrapTable.style.display = 'none';
+
+            if (d.need_manual) {
+                term.innerText =
+                    `======================================================================\n` +
+                    `[ВНИМАНИЕ: МАЛО ДАННЫХ ДЛЯ УМНОЙ МОДЕЛИ]\n` +
+                    `Накоплено: ${d.days_available} из 14 дней истории.\n` +
+                    `Для сезонного расчёта (70% неделя назад / 30% две недели) нужно накопить логи.\n\n` +
+                    `👉 РЕШЕНИЕ: Укажите скорость вручную в поле «Скорость» (например: 25 МБ/с),\n` +
+                    `   и калькулятор мгновенно рассчитает точный финиш по ней!\n` +
+                    `======================================================================`;
+            } else {
+                term.innerText = `[ОШИБКА РАСЧЁТА]\nПричина: ${d.error || 'Неизвестная ошибка'}`;
+            }
+            return;
+        }
+
+        lastForecastData = d;
+        btnTable.style.display = 'inline-flex';
+        btnCsv.style.display = 'inline-flex';
+
+        if (d.achieved) {
+            btnTable.style.display = 'none';
+            term.innerText =
+                `======================================================================\n` +
+                `[СТАТУС: ЦЕЛЬ ДОСТИГНУТА!]\n` +
+                `Объект: ${d.name}\n` +
+                `Текущий объём: ${d.current_up_fmt} | Заданная цель: ${d.target_fmt}\n` +
+                `Раздача уже превысила указанный порог!\n` +
+                `======================================================================`;
+            return;
+        }
+
+        const modeTxt = d.is_manual ? 'Ручной ввод скорости' : 'Умная модель (14 дней, веса 70% неделя назад / 30% две недели)';
+        let outText =
+            `======================================================================\n` +
+            `[РЕЗУЛЬТАТ ПРОГНОЗА & ТАЙМИНГОВ]\n` +
+            `Объект:        ${d.name}\n` +
+            `Текущий объём: ${d.current_up_fmt}  -->  Желаемая цель: ${d.target_fmt}\n` +
+            `Осталось:      ${d.remaining_fmt}\n`;
+
+        if (!d.is_seedbox) {
+            outText += `Ratio сейчас:  ${d.ratio_current}x  -->  к завтрашнему дню: ~${d.ratio_after_24h}x\n`;
+        }
+
+        outText +=
+            `----------------------------------------------------------------------\n` +
+            `Режим расчёта: ${modeTxt}\n` +
+            `Ожидаемая отдача за 24ч:  +${d.forecast_24h_vol_fmt}\n` +
+            `ТОЧНЫЙ ФИНИШ ДОСТИЖЕНИЯ:  ${d.eta_str}\n` +
+            `======================================================================`;
+
+        term.innerText = outText;
+
+        // Заполняем строки 24-часовой таблицы
+        const tbody = document.getElementById('smart-res-tbody');
+        tbody.innerHTML = '';
+        (d.forecast_rows || []).forEach(r => {
+            tbody.innerHTML += `<tr>
+                <td>${r.date}</td>
+                <td><strong>${r.hour}</strong></td>
+                <td style="color: #9b59b6; font-weight: 700;">+${r.volume_mb}</td>
+                <td style="color: #3498db; font-weight: 600;">${r.speed_fmt}</td>
+                <td style="color: var(--text-muted); font-size: 11px;">${r.basis}</td>
+            </tr>`;
+        });
+    }
+
+    function toggleForecastTable() {
+        const wrap = document.getElementById('smart-res-table-wrap');
+        const btn = document.getElementById('btn-toggle-forecast-table');
+        if (wrap.style.display === 'none' || !wrap.style.display) {
+            wrap.style.display = 'block';
+            btn.innerText = '🔼 Скрыть почасовой прогноз';
+        } else {
+            wrap.style.display = 'none';
+            btn.innerText = '📅 Показать почасовой прогноз на 24ч';
+        }
+    }
+
+    async function exportForecastCSV() {
+        if (!lastForecastData) return alert("Сначала выполните расчёт прогноза!");
+        const res = await fetch('/api/smart_calc/export', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ forecast_data: lastForecastData })
+        });
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toLocaleString('sv-SE').replace(/[- :]/g, '_');
+        a.download = `forecast_24h_${ts}.csv`;
+        a.click();
+    }
+
+    async function loadTorrentHourlyHistory() {
+        const hash = document.getElementById('history-torrent-select').value || 'all';
+        const res = await fetch(`/api/analytics/history?hash=${hash}&limit=36`);
+        const list = await res.json();
+        const tbody = document.getElementById('torrent-history-tbody');
+        tbody.innerHTML = '';
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">История формируется по плановым авто-снимкам каждый час</td></tr>';
+            return;
+        }
+        list.forEach(row => {
+            tbody.innerHTML += `<tr>
+                <td>${row.datetime}</td>
+                <td>${row.uploaded_fmt}</td>
+                <td style="color: #9b59b6; font-weight: 700;">+${row.delta_mb}</td>
+                <td style="color: #3498db; font-weight: 600;">${row.speed_fmt}</td>
+            </tr>`;
+        });
+    }
+
+    async function loadLogsList() {
+        const res = await fetch('/api/logs/list');
+        const files = await res.json();
+        const sel = document.getElementById('log-file-select');
+        sel.innerHTML = '';
+        files.forEach(f => sel.innerHTML += `<option value="${f}">${f}</option>`);
+        loadLogContent();
+    }
+
+    async function loadLogContent() {
+        const name = document.getElementById('log-file-select').value;
+        if (!name) return;
+        const dlBtn = document.getElementById('download-log-btn');
+        dlBtn.href = `/api/logs/download?name=${encodeURIComponent(name)}`;
+
+        const res = await fetch(`/api/logs/view?name=${encodeURIComponent(name)}`);
+        const d = await res.json();
+        document.getElementById('log-view-terminal').innerText = d.content || d.error || 'Файл пуст';
+    }
+
+    async function openSettingsModal() {
+        checkAutostart();
+        const res = await fetch('/api/settings');
+        const d = await res.json();
+        document.getElementById('setting-web-port').value = d.web_port;
+        document.getElementById('setting-web-host').value = d.web_host;
+        document.getElementById('setting-qb-ip').value = d.qb_ip;
+        document.getElementById('setting-qb-port').value = d.qb_port;
+        document.getElementById('settings-modal').style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+        document.getElementById('settings-modal').style.display = 'none';
+    }
+
+    async function saveSettings() {
+        const p = parseInt(document.getElementById('setting-web-port').value);
+        const h = document.getElementById('setting-web-host').value;
+        const qbIp = document.getElementById('setting-qb-ip').value;
+        const qbPort = document.getElementById('setting-qb-port').value;
+
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({web_port: p, web_host: h, qb_ip: qbIp, qb_port: qbPort})
+        });
+        const d = await res.json();
+        alert(d.message);
+        closeSettingsModal();
+        if (d.port_changed) setTimeout(() => { window.location.port = p; }, 1500);
+    }
+
+    window.onload = () => {
+        syncTabWithHash();
+        setInterval(checkQbStatus, 5000);
+    };
+</script>
+</body>
+</html>
