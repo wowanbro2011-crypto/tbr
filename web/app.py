@@ -40,17 +40,36 @@ def get_html_content():
             return f.read()
     return "<h1>Шаблон index.html не найден</h1>"
 
+
 def resolve_log_path(filename):
-    clean = filename.replace('..', '').strip('/\\')
-    candidates = [
-        os.path.normpath(os.path.join(LOG_FOLDER, clean)),
-        os.path.normpath(os.path.join(AUTO_FOLDER, os.path.basename(clean))),
-        os.path.normpath(os.path.join(MANUAL_FOLDER, os.path.basename(clean))),
-        os.path.normpath(os.path.join(LOG_FOLDER, os.path.basename(clean)))
-    ]
-    for c in candidates:
-        if os.path.exists(c) and os.path.isfile(c):
-            return c
+    """Строго изолирует поиск файлов внутри разрешённых папок логов, защищая от LFI."""
+    if not filename:
+        return None
+
+    # Очищаем имя от любых попыток выхода за пределы директорий
+    clean_name = os.path.basename(filename.replace('\\', '/'))
+
+    # Разрешаем заглядывать только в 3 конкретные папки
+    allowed_dirs = [LOG_FOLDER, AUTO_FOLDER, MANUAL_FOLDER]
+
+    # Если это подпапка (например, auto_hourly/файл.csv)
+    if '/' in filename or '\\' in filename:
+        parts = filename.replace('\\', '/').split('/')
+        if len(parts) >= 2:
+            subfolder = parts[-2]
+            if subfolder == 'auto_hourly':
+                allowed_dirs = [AUTO_FOLDER]
+            elif subfolder == 'manual_exports':
+                allowed_dirs = [MANUAL_FOLDER]
+            clean_name = parts[-1]
+
+    for directory in allowed_dirs:
+        full_path = os.path.normpath(os.path.join(directory, clean_name))
+        # Проверяем, что итоговый путь физически находится внутри разрешенной директории
+        if full_path.startswith(os.path.normpath(directory)) and os.path.exists(full_path) and os.path.isfile(
+                full_path):
+            return full_path
+
     return None
 
 @app.route('/')
