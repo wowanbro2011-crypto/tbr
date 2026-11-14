@@ -5,7 +5,7 @@ title Сборка tbr PRO (OneFile / OneDir)
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
-set "ADD_DATA=%ROOT%\web\templates;web/templates"
+set "ADD_DATA=%ROOT%\web;web"
 set "ENTRY=%ROOT%\main.py"
 
 echo ==================================================

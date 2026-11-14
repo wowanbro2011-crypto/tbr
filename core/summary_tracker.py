@@ -5,11 +5,13 @@ import json
 import csv
 import datetime
 import threading
-from utils.helpers import LOG_FOLDER, format_file_size, parse_bytes, parse_speed, write_log, write_error_log
+from utils.config import cfg
+from utils.helpers import (
+    LOG_FOLDER, format_file_size, parse_bytes, parse_speed,
+    sanitize_csv_cell, write_log, write_error_log
+)
 
-# 1. Папка для автоматических почасовых выгрузок
 AUTO_FOLDER = os.path.join(LOG_FOLDER, "auto_hourly")
-# 2. Папка для ручных выгрузок и экспортов прогнозов
 MANUAL_FOLDER = os.path.join(LOG_FOLDER, "manual_exports")
 
 os.makedirs(AUTO_FOLDER, exist_ok=True)
@@ -58,7 +60,6 @@ class SummaryTracker:
             write_error_log("Ошибка сохранения summary_history.json", e)
 
     def record_snapshot(self, summaries):
-        """Снимок записывается ТОЛЬКО при плановой автовыгрузке каждый час!"""
         with self._lock:
             history = self._load_history()
             now = time.time()
@@ -84,7 +85,6 @@ class SummaryTracker:
             self._save_history(history)
 
     def get_stats(self, summaries):
-        """Чистое чтение статистики без добавления ложных промежуточных снимков."""
         with self._lock:
             history = self._load_history()
 
@@ -108,10 +108,24 @@ class SummaryTracker:
                 snap_24h = min(cand_24h, key=lambda x: abs((now_ts - x['timestamp']) - 86400))
                 dt_24h = max(1, now_ts - snap_24h['timestamp'])
 
-        if snap_1h:
-            global_hour_volume = max(0, total_uploaded - snap_1h.get('total_uploaded', total_uploaded))
-        else:
-            global_hour_volume = 0
+        global_hour_volume = 0
+        global_hour_note = "ожидание замера"
+        if history:
+            latest_snap = history[-1]
+            elapsed_sec = now_ts - latest_snap.get('timestamp', now_ts)
+            if 300 <= elapsed_sec <= 7200:
+                delta_since_last = max(0, total_uploaded - latest_snap.get('total_uploaded', total_uploaded))
+                global_hour_volume = int((delta_since_last / elapsed_sec) * 3600)
+                global_hour_note = f"прошло {int(elapsed_sec // 60)} мин с техлога"
+            elif elapsed_sec < 300 and len(history) >= 2:
+                prev_snap = history[-2]
+                dt_prev = max(1, latest_snap['timestamp'] - prev_snap['timestamp'])
+                delta_prev = max(0, latest_snap.get('total_uploaded', 0) - prev_snap.get('total_uploaded', 0))
+                global_hour_volume = int((delta_prev / dt_prev) * 3600)
+                global_hour_note = "прошлый полный час (<5м нового)"
+            elif snap_1h:
+                global_hour_volume = max(0, total_uploaded - snap_1h.get('total_uploaded', total_uploaded))
+                global_hour_note = "по снимку ~1ч назад"
 
         if snap_24h:
             global_day_volume = max(0, total_uploaded - snap_24h.get('total_uploaded', total_uploaded))
@@ -120,8 +134,9 @@ class SummaryTracker:
             max_act = max(active_times) if active_times else 0
             global_day_volume = int((total_uploaded / max_act) * 86400) if max_act > 0 else 0
 
-        if not snap_1h and global_day_volume > 0:
+        if global_hour_volume == 0 and global_day_volume > 0:
             global_hour_volume = int(global_day_volume / 24)
+            global_hour_note = "расчётное от суток"
 
         global_hour_speed_bps = global_hour_volume / 3600.0 if global_hour_volume > 0 else 0.0
         global_day_speed_bps = global_day_volume / 86400.0 if global_day_volume > 0 else 0.0
@@ -139,8 +154,7 @@ class SummaryTracker:
             act = s.get('active_seconds', 0)
             sz = s.get('size', 0)
 
-            ratio = round(up / sz, 2) if sz > 0 else 0.0
-            item['ratio'] = ratio
+            item['ratio'] = round(up / sz, 2) if sz > 0 else 0.0
 
             avg_all = (up / act) if act > 0 else 0
             item['speed_all_time'] = avg_all
@@ -172,15 +186,12 @@ class SummaryTracker:
             item['vol_day_fmt'] = f"{vol_24h_bytes / (1024 * 1024):.2f} МБ/день"
 
             r_h_all = (avg_all * 3600.0 / sz) if sz > 0 else 0.0
-            r_h_hour = (sp_1h * 3600.0 / sz) if sz > 0 else 0.0
-            r_h_day = (sp_24h * 3600.0 / sz) if sz > 0 else 0.0
-
             item['ratio_h_all'] = r_h_all
             item['ratio_h_all_fmt'] = fmt_ratio_h(r_h_all)
-            item['ratio_h_hour'] = r_h_hour
-            item['ratio_h_hour_fmt'] = fmt_ratio_h(r_h_hour)
-            item['ratio_h_day'] = r_h_day
-            item['ratio_h_day_fmt'] = fmt_ratio_h(r_h_day)
+            item['ratio_h_hour'] = (sp_1h * 3600.0 / sz) if sz > 0 else 0.0
+            item['ratio_h_hour_fmt'] = fmt_ratio_h(item['ratio_h_hour'])
+            item['ratio_h_day'] = (sp_24h * 3600.0 / sz) if sz > 0 else 0.0
+            item['ratio_h_day_fmt'] = fmt_ratio_h(item['ratio_h_day'])
 
             enhanced_items.append(item)
 
@@ -193,6 +204,7 @@ class SummaryTracker:
             'global_hour_volume': global_hour_volume,
             'global_hour_volume_fmt': f"{format_file_size(global_hour_volume)} / час",
             'global_hour_speed_fmt': fmt_speed(global_hour_speed_bps),
+            'global_hour_note': global_hour_note,
             'global_day_volume': global_day_volume,
             'global_day_volume_fmt': f"{format_file_size(global_day_volume)} / день",
             'global_day_speed_fmt': fmt_speed(global_day_speed_bps),
@@ -203,7 +215,6 @@ class SummaryTracker:
         }
 
     def calculate_smart_forecast(self, target_type, target_hash, target_str, speed_str, summaries):
-        """Умный калькулятор: 14 дней (70% неделя / 30% 2 недели) или ручной ввод скорости."""
         try:
             is_seedbox = (target_type == 'all' or not target_hash)
 
@@ -237,17 +248,32 @@ class SummaryTracker:
                 if manual_speed <= 0:
                     return {'success': False, 'error': "Скорость должна быть больше 0!"}
 
+            raw_w1 = max(0, cfg.getint('Weight_W1', 70))
+            raw_w2 = max(0, cfg.getint('Weight_W2', 30))
+            raw_w3 = max(0, cfg.getint('Weight_W3', 0))
+            total_w = raw_w1 + raw_w2 + raw_w3
+
+            if not is_manual and total_w <= 0:
+                return {'success': False, 'error': "Все веса расчёта равны 0! Задайте их в ⚙️ Настройки."}
+
+            nw1 = raw_w1 / total_w if total_w > 0 else 0.0
+            nw2 = raw_w2 / total_w if total_w > 0 else 0.0
+            nw3 = raw_w3 / total_w if total_w > 0 else 0.0
+
+            req_days = 21 if raw_w3 > 0 else (14 if raw_w2 > 0 else 7)
+
             with self._lock:
                 history = self._load_history()
 
             now_ts = time.time()
-            days_available = (history[-1]['timestamp'] - history[0]['timestamp']) / 86400.0 if len(history) >= 2 else 0.0
+            days_available = (now_ts - history[0]['timestamp']) / 86400.0 if history else 0.0
 
-            if not is_manual and (len(history) < 336 or days_available < 14.0):
+            if not is_manual and (len(history) < 2 or days_available < (req_days - 0.15)):
                 return {
                     'success': False, 'need_manual': True,
                     'days_available': round(days_available, 1),
-                    'error': f"Недостаточно данных (накоплено {days_available:.1f} из 14 дней). Укажите скорость вручную."
+                    'req_days': req_days,
+                    'error': f"Недостаточно данных (накоплено {days_available:.1f} из {req_days} дн.). Укажите скорость вручную."
                 }
 
             def get_hist_delta(t_start, t_end):
@@ -271,11 +297,16 @@ class SummaryTracker:
                     speed_hour = manual_speed
                     basis_text = "Ручной ввод скорости"
                 else:
-                    d1 = get_hist_delta(h_start - (168 * 3600), h_end - (168 * 3600))
-                    d2 = get_hist_delta(h_start - (336 * 3600), h_end - (336 * 3600))
-                    vol_hour = int((0.7 * d1) + (0.3 * d2))
+                    d1 = get_hist_delta(h_start - (168 * 3600), h_end - (168 * 3600)) if nw1 > 0 else 0
+                    d2 = get_hist_delta(h_start - (336 * 3600), h_end - (336 * 3600)) if nw2 > 0 else 0
+                    d3 = get_hist_delta(h_start - (504 * 3600), h_end - (504 * 3600)) if nw3 > 0 else 0
+                    vol_hour = int((nw1 * d1) + (nw2 * d2) + (nw3 * d3))
                     speed_hour = vol_hour / 3600.0
-                    basis_text = f"Неделя: {d1 / (1024**2):.1f} МБ (70%) + 2 нед.: {d2 / (1024**2):.1f} МБ (30%)"
+                    parts = []
+                    if nw1 > 0: parts.append(f"1нед: {d1/(1024**2):.1f}МБ ({nw1*100:.0f}%)")
+                    if nw2 > 0: parts.append(f"2нед: {d2/(1024**2):.1f}МБ ({nw2*100:.0f}%)")
+                    if nw3 > 0: parts.append(f"3нед: {d3/(1024**2):.1f}МБ ({nw3*100:.0f}%)")
+                    basis_text = " + ".join(parts)
 
                 projected_24h_volume += vol_hour
                 forecast_24h_rows.append({
@@ -324,9 +355,12 @@ class SummaryTracker:
                 for eng, ru in ru_days.items():
                     eta_str = eta_str.replace(eng, ru)
 
+            weights_desc = f"{nw1*100:.0f}% / {nw2*100:.0f}% / {nw3*100:.0f}% ({req_days} дн.)"
+
             return {
                 'success': True, 'achieved': False, 'name': name,
                 'target_type': target_type, 'is_seedbox': is_seedbox, 'is_manual': is_manual,
+                'weights_desc': weights_desc,
                 'current_up_fmt': format_file_size(current_up),
                 'target_fmt': format_file_size(target_bytes),
                 'remaining_fmt': format_file_size(remaining_bytes),
@@ -342,18 +376,18 @@ class SummaryTracker:
 
     def export_forecast_csv(self, forecast_data):
         ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        clean_name = "".join(c for c in forecast_data['name'] if c.isalnum() or c in (' ', '_', '-')).strip()[:30]
+        raw_name = str(forecast_data.get('name', 'forecast'))
+        clean_name = "".join(c for c in raw_name if c.isalnum() or c in (' ', '_', '-')).strip()[:30] or 'forecast'
         filename = f"forecast_24h_{clean_name}_{ts}.csv"
         filepath = os.path.join(self.manual_folder, filename)
 
         lines = [
             f"# === ПОЧАСОВОЙ ПРОГНОЗ ОТДАЧИ НА 24 ЧАСА ===",
-            f"# Объект: {forecast_data['name']}",
+            f"# Объект: {sanitize_csv_cell(forecast_data.get('name', ''))}",
             f"# Дата расчета: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Цель: {forecast_data['target_fmt']} | Осталось: {forecast_data['remaining_fmt']}",
-            f"# Ожидаемая отдача за следующие 24ч: {forecast_data['forecast_24h_vol_fmt']}",
-            f"# Ожидаемое время достижения цели: {forecast_data['eta_str']}",
-            f"# Режим: {'Ручной ввод' if forecast_data.get('is_manual') else 'Умная модель (14 дней, 70/30)'}",
+            f"# Цель: {forecast_data.get('target_fmt', '')} | Осталось: {forecast_data.get('remaining_fmt', '')}",
+            f"# Ожидаемая отдача за следующие 24ч: {forecast_data.get('forecast_24h_vol_fmt', '')}",
+            f"# Ожидаемое время достижения цели: {forecast_data.get('eta_str', '')}",
             f"# =========================================="
         ]
 
@@ -362,15 +396,20 @@ class SummaryTracker:
                 f.write('\n'.join(lines) + '\n')
                 w = csv.writer(f, delimiter=';')
                 w.writerow(['Дата', 'Интервал (час)', 'Ожидаемый объём (МБ)', 'Ожидаемая скорость', 'Обоснование расчёта'])
-                for r in forecast_data.get('forecast_rows', []):
-                    w.writerow([r['date'], r['hour'], r['volume_mb'], r['speed_fmt'], r['basis']])
+                for r in forecast_data.get('forecast_rows', [])[:100]:
+                    w.writerow([
+                        sanitize_csv_cell(r.get('date', '')),
+                        sanitize_csv_cell(r.get('hour', '')),
+                        sanitize_csv_cell(r.get('volume_mb', '')),
+                        sanitize_csv_cell(r.get('speed_fmt', '')),
+                        sanitize_csv_cell(r.get('basis', ''))
+                    ])
             return filepath, filename
         except Exception as e:
             write_error_log("Ошибка экспорта прогноза в CSV", e)
             return None, None
 
     def export_hourly_csv(self, summaries):
-        """ПЛАНОВАЯ АВТОВЫГРУЗКА: делает снимок и сохраняет файл в auto_hourly."""
         if not summaries:
             return None
         self.record_snapshot(summaries)
@@ -390,7 +429,6 @@ class SummaryTracker:
             f"# Сумма за 1 час: {stats['global_hour_volume_fmt']} ({stats['global_hour_speed_fmt']})",
             f"# Объем в день: {stats['global_day_volume_fmt']} ({stats['global_day_speed_fmt']})",
             f"# Ratio/ч: {stats['global_ratio_h_all_fmt']} (всего) | {stats['global_ratio_h_day_fmt']} (день) | {stats['global_ratio_h_hour_fmt']} (час)",
-            f"# Папка: {self.auto_folder}",
             f"# =========================================="
         ]
 
@@ -408,21 +446,21 @@ class SummaryTracker:
                     ])
                     for s in stats['items']:
                         w.writerow([
-                            s.get('name', ''),
-                            s.get('hash_id', ''),
+                            sanitize_csv_cell(s.get('name', '')),
+                            sanitize_csv_cell(s.get('hash_id', '')),
                             s.get('size', 0),
                             s.get('uploaded', 0),
                             f"{s.get('ratio', 0.0):.2f}",
-                            s.get('speed_all_time_fmt', '0 B/s'),
-                            s.get('speed_1h_fmt', '0 B/s'),
-                            s.get('speed_24h_fmt', '0 B/s'),
-                            s.get('vol_hour_fmt', '0.00 МБ/ч'),
-                            s.get('vol_day_fmt', '0.00 МБ/день'),
-                            s.get('ratio_h_all_fmt', '0.000 /ч'),
-                            s.get('ratio_h_hour_fmt', '0.000 /ч'),
-                            s.get('ratio_h_day_fmt', '0.000 /ч'),
+                            sanitize_csv_cell(s.get('speed_all_time_fmt', '0 B/s')),
+                            sanitize_csv_cell(s.get('speed_1h_fmt', '0 B/s')),
+                            sanitize_csv_cell(s.get('speed_24h_fmt', '0 B/s')),
+                            sanitize_csv_cell(s.get('vol_hour_fmt', '0.00 МБ/ч')),
+                            sanitize_csv_cell(s.get('vol_day_fmt', '0.00 МБ/день')),
+                            sanitize_csv_cell(s.get('ratio_h_all_fmt', '0.000 /ч')),
+                            sanitize_csv_cell(s.get('ratio_h_hour_fmt', '0.000 /ч')),
+                            sanitize_csv_cell(s.get('ratio_h_day_fmt', '0.000 /ч')),
                             s.get('active_seconds', 0),
-                            s.get('created', '')
+                            sanitize_csv_cell(s.get('created', ''))
                         ])
             except Exception as e:
                 write_error_log("Ошибка экспорта почасового CSV", e)
@@ -431,7 +469,6 @@ class SummaryTracker:
         return filepath
 
     def save_manual_csv(self, items):
-        """РУЧНАЯ ВЫГРУЗКА СВОДКИ: сохраняется в отдельную папку manual_exports без создания снимка."""
         ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filepath = os.path.join(self.manual_folder, f"summary_manual_{ts}.csv")
         try:
@@ -447,19 +484,20 @@ class SummaryTracker:
                 ])
                 for s in items:
                     w.writerow([
-                        s.get('name', ''), s.get('hash_id', ''),
+                        sanitize_csv_cell(s.get('name', '')),
+                        sanitize_csv_cell(s.get('hash_id', '')),
                         s.get('size', 0), f"{s.get('size', 0) / (1024 ** 3):.2f}",
                         s.get('uploaded', 0), f"{s.get('uploaded', 0) / (1024 ** 3):.2f}",
                         f"{s.get('ratio', 0.0):.2f}",
-                        s.get('speed_all_time_fmt', '0 B/s'),
-                        s.get('speed_1h_fmt', '0 B/s'),
-                        s.get('speed_24h_fmt', '0 B/s'),
-                        s.get('vol_hour_fmt', '0.00 МБ/ч'),
-                        s.get('vol_day_fmt', '0.00 МБ/день'),
-                        s.get('ratio_h_all_fmt', '0.000 /ч'),
-                        s.get('ratio_h_hour_fmt', '0.000 /ч'),
-                        s.get('ratio_h_day_fmt', '0.000 /ч'),
-                        s.get('created', '')
+                        sanitize_csv_cell(s.get('speed_all_time_fmt', '0 B/s')),
+                        sanitize_csv_cell(s.get('speed_1h_fmt', '0 B/s')),
+                        sanitize_csv_cell(s.get('speed_24h_fmt', '0 B/s')),
+                        sanitize_csv_cell(s.get('vol_hour_fmt', '0.00 МБ/ч')),
+                        sanitize_csv_cell(s.get('vol_day_fmt', '0.00 МБ/день')),
+                        sanitize_csv_cell(s.get('ratio_h_all_fmt', '0.000 /ч')),
+                        sanitize_csv_cell(s.get('ratio_h_hour_fmt', '0.000 /ч')),
+                        sanitize_csv_cell(s.get('ratio_h_day_fmt', '0.000 /ч')),
+                        sanitize_csv_cell(s.get('created', ''))
                     ])
         except Exception as e:
             write_error_log("Ошибка ручного сохранения CSV", e)
@@ -472,11 +510,7 @@ class SummaryTracker:
         result = []
         prev_up = None
         for snap in recent:
-            if t_hash == 'all':
-                up = snap.get('total_uploaded', 0)
-            else:
-                up = snap.get('torrents', {}).get(t_hash)
-
+            up = snap.get('total_uploaded', 0) if t_hash == 'all' else snap.get('torrents', {}).get(t_hash)
             if up is not None:
                 delta = max(0, up - prev_up) if prev_up is not None else 0
                 result.append({

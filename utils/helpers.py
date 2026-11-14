@@ -1,13 +1,14 @@
 # utils/helpers.py
 import os
-import sys
 import datetime
 import traceback
 import re
 
-# Папка логов перенесена в системную директорию AppData/Local/tbr/logs (вне папки с exe)
 LOCAL_APP_DATA = os.environ.get('LOCALAPPDATA', os.path.join(os.path.expanduser('~'), 'AppData', 'Local'))
-LOG_FOLDER = os.path.join(LOCAL_APP_DATA, 'tbr', 'logs')
+APP_DATA_DIR = os.path.join(LOCAL_APP_DATA, 'tbr')
+LOG_FOLDER = os.path.join(APP_DATA_DIR, 'logs')
+
+os.makedirs(APP_DATA_DIR, exist_ok=True)
 os.makedirs(LOG_FOLDER, exist_ok=True)
 
 def write_log(category, message):
@@ -29,6 +30,13 @@ def write_error_log(context, error):
     except Exception:
         pass
 
+def sanitize_csv_cell(val):
+    """Защита от CSV Formula Injection."""
+    s = str(val) if val is not None else ''
+    if s and s[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + s
+    return s
+
 def format_file_size(size_bytes):
     if size_bytes is None:
         return "0 B"
@@ -36,19 +44,14 @@ def format_file_size(size_bytes):
         size = float(size_bytes)
     except (ValueError, TypeError):
         return "0 B"
-
     if size <= 0:
         return "0 B"
-
     if size < 1.0:
         return f"{size:.2f} B"
-
-    units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']
-    for unit in units:
+    for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
         if size < 1024.0:
             return f"{size:.2f} {unit}"
         size /= 1024.0
-
     return f"{size:.2f} EiB"
 
 def parse_bytes(text, torrent_size=0):
@@ -56,27 +59,27 @@ def parse_bytes(text, torrent_size=0):
         raise ValueError("Цель не может быть пустой!")
     text = text.strip().lower().replace(',', '.')
 
-    m_ratio = re.match(r'^([\d\.]+)\s*(?:x|ratio|р)?$', text)
+    m_ratio = re.match(r'^([\d\.]+)\s*(?:x|х|ratio|р|ратио)?$', text)
     if m_ratio:
         ratio = float(m_ratio.group(1))
         if ratio <= 0:
             raise ValueError("Ratio должен быть больше 0!")
         return int(torrent_size * ratio)
 
-    m_size = re.match(r'^([\d\.]+)\s*([a-zа-я]+)?$', text)
+    m_size = re.match(r'^([\d\.]+)\s*([a-zа-яё]+)?$', text)
     if not m_size:
-        raise ValueError("Неверный формат цели!")
+        raise ValueError("Неверный формат цели! (Пример: 50 тиб, 100 GiB или 2.0x)")
 
     val = float(m_size.group(1))
     unit = (m_size.group(2) or 'b').lower()
 
     multipliers = {
         'b': 1, 'б': 1, 'байт': 1,
-        'k': 1024, 'kb': 1024, 'kib': 1024, 'кб': 1024,
-        'm': 1024**2, 'mb': 1024**2, 'mib': 1024**2, 'мб': 1024**2,
-        'g': 1024**3, 'gb': 1024**3, 'gib': 1024**3, 'гб': 1024**3,
-        't': 1024**4, 'tb': 1024**4, 'tib': 1024**4, 'тб': 1024**4,
-        'p': 1024**5, 'pb': 1024**5, 'pib': 1024**5, 'пб': 1024**5
+        'k': 1024, 'kb': 1024, 'kib': 1024, 'к': 1024, 'кб': 1024, 'киб': 1024,
+        'm': 1024**2, 'mb': 1024**2, 'mib': 1024**2, 'м': 1024**2, 'мб': 1024**2, 'миб': 1024**2,
+        'g': 1024**3, 'gb': 1024**3, 'gib': 1024**3, 'г': 1024**3, 'гб': 1024**3, 'гиб': 1024**3,
+        't': 1024**4, 'tb': 1024**4, 'tib': 1024**4, 'т': 1024**4, 'тб': 1024**4, 'тиб': 1024**4,
+        'p': 1024**5, 'pb': 1024**5, 'pib': 1024**5, 'п': 1024**5, 'пб': 1024**5, 'пиб': 1024**5
     }
 
     if unit not in multipliers:
@@ -89,18 +92,18 @@ def parse_speed(text, default_bytes_sec=0):
         return default_bytes_sec
     text = text.strip().lower().replace(',', '.')
 
-    m = re.match(r'^([\d\.]+)\s*([a-zа-я/]+)?$', text)
+    m = re.match(r'^([\d\.]+)\s*([a-zа-яё/]+)?$', text)
     if not m:
         raise ValueError("Неверный формат скорости!")
 
     val = float(m.group(1))
-    raw_unit = (m.group(2) or 'b').replace('/s', '').replace('/с', '').replace('/сек', '').strip()
+    raw_unit = (m.group(2) or 'mib').replace('/s', '').replace('/с', '').replace('/сек', '').strip()
 
     multipliers = {
         'b': 1, 'б': 1,
-        'k': 1024, 'kb': 1024, 'kib': 1024, 'кб': 1024,
-        'm': 1024**2, 'mb': 1024**2, 'mib': 1024**2, 'мб': 1024**2,
-        'g': 1024**3, 'gb': 1024**3, 'gib': 1024**3, 'гб': 1024**3
+        'k': 1024, 'kb': 1024, 'kib': 1024, 'к': 1024, 'кб': 1024, 'киб': 1024,
+        'm': 1024**2, 'mb': 1024**2, 'mib': 1024**2, 'м': 1024**2, 'мб': 1024**2, 'миб': 1024**2,
+        'g': 1024**3, 'gb': 1024**3, 'gib': 1024**3, 'г': 1024**3, 'гб': 1024**3, 'гиб': 1024**3
     }
 
     unit = raw_unit if raw_unit in multipliers else 'mib'

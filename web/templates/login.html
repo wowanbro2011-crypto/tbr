@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход — tbr PRO</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+    <div class="card login-card">
+        <div class="login-title">⚡ tbr PRO</div>
+        <p class="muted-text" style="margin-bottom: 16px;">Сервер открыт по сети. Введите пароль:</p>
+        {% if error %}
+        <div class="alert-err">{{ error }}</div>
+        {% endif %}
+        <form method="POST" action="/login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <input type="password" name="password" class="form-control" placeholder="Пароль доступа" required autofocus>
+            </div>
+            <button type="submit" class="btn w-full" style="padding: 10px; justify-content: center;">🔓 Войти</button>
+        </form>
+    </div>
+</body>
+</html>
